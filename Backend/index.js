@@ -1,6 +1,17 @@
 const express = require("express")
 const app = express()
 const cors = require("cors");
+const mongoose = require("mongoose");
+
+const MONGO_URL = process.env.MONGO_URI || "mongodb://mongo-user:27017/userdb";
+
+mongoose
+    .connect(MONGO_URL)
+    .then(() => console.log("MongoDB connected"))
+    .catch((err) => {
+      console.error("MongoDB connection error", err);
+      process.exit(1);
+    });
 
 app.use(express.json({ limit: "100mb" }))
 

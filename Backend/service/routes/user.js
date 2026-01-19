@@ -1,33 +1,67 @@
 const router = require('express').Router()
-const { MongoClient } = require('mongodb');
+const User =require("../entity/UserModel");
+const fs = require("fs");
+const path = require("path");
 
-//example connection  
-//can be replaced and refactored
-async function connectToMongoDB() {
+router.get('/', async (req, res) => {
   try {
-    const uri = "mongodb://root:root@mongo-user:27017/userdb"
-    const client = new MongoClient(uri);
-    await client.connect();
-    
-    return client;
-  } catch (error) {
-    console.error('Error connecting to MongoDB:', error);
-    throw error;
+    const users = await User.find().limit(50).lean();
+    res.status(200).json({items: users});
+  } catch (err) {
+      console.error("GET /users failed:", err);
+      res.status(500).json({ message: "Internal server error" });
   }
-}
-
-router.get('', async (req, res) => {
-
-  res.send("TODO User GET")
 })
 
+router.post("/import", async (req, res) => {
+    try {
+        const filePath = "/app/user.csv";
+
+        const fileContent = fs.readFileSync(filePath, "utf8");
+
+        const lines = fileContent.split("\n");
+        const header = lines.shift();
+
+        let imported = 0;
+
+        for (const line of lines) {
+            if (!line.trim()) continue;
+
+            const[
+                name,
+                email,
+                ipAddress,
+                location,
+                active,
+                lastLogin,
+            ] = line.split(",");
+
+            await User.updateOne(
+                {email: email.trim()},
+                {
+                    name: name?.trim(),
+                    email: email?.trim(),
+                    ipAddress: ipAddress?.trim() || null,
+                    location: location?.trim() || null,
+                    active: active === "true",
+                    lastLogin: lastLogin ? new Date(lastLogin) : null,
+                },
+                {upsert: true}
+            );
+            imported++;
+        }
+        res.status(200).json({
+            message: "CSV import successful",
+            imported,
+        });
+    }catch(err) {
+        console.error("CSV import failed:", err);
+        res.status(500).json({message:"CSV import failed"});
+    }
+
+});
 router.get('/:id', async (req, res) => {
   res.send("TODO User GET ID")
-
-})
-
-router.post('', async (req, res) => {
-  res.send("TODO User POST")
 
 })
 
@@ -37,12 +71,45 @@ router.patch('/:id', async (req, res) => {
 })
 
 router.patch('/:id/block', async (req, res) => {
-  res.send("TODO User Block")
+  try {
+      const { id } = req.params;
 
+      const updated = await User.findByIdAndUpdate(
+          id,
+          {blocked: true},
+          {new: true, lean: true}
+      );
+
+      if (!updated) {
+          return res.status(404).json({message:"User not found"});
+      }
+
+      return res.status(200).json({items: updated});
+  } catch (err) {
+      console.error("PATCH /users/:id/block failed", err);
+      return res.status(500).json({message:"Internal server error"});
+  }
 })
 
 router.patch('/:id/unblock', async (req, res) => {
-  res.send("TODO User unblock")
+  try{
+      const { id } = req.params;
+
+      const updated = await User.findByIdAndUpdate(
+          id,
+          {blocked: false},
+          {new: true, lean: true}
+      );
+
+      if (!updated) {
+          return res.status(404).json({message:"User not found"});
+      }
+
+      return res.status(200).json({items: updated});
+  }catch(err) {
+      console.error("PATCH /users/:id/unblock failed", err);
+      return res.status(500).json({message:"Internal server error"});
+  }
 })
 
 module.exports = router

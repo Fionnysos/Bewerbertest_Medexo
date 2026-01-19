@@ -110,3 +110,9 @@ Bewerbertest2026
 
 
 Viel Erfolg beim Bewerbertest 🚀
+
+
+
+Wichtig:
+
+Db Connection ist in index.js besser aufgehoben weil sie der Startpoint des Backends ist. Beim start des Backends sollte das DB verbinden nur einmal passieren.
