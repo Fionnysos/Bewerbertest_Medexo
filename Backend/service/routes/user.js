@@ -1,12 +1,20 @@
 const router = require("express").Router();
 const User = require("../entity/UserModel");
 const fs = require("fs");
-const path = require("path");
+
+// Joi validation (request-level)
+const { userValidation } = require("../validation/userValidation");
 
 // 1) LIST users
 router.get("/", async (req, res) => {
     try {
-        const users = await User.find().limit(50).lean();
+        const limitRaw = req.query.limit;
+        const limit = limitRaw ? Math.max(1, Math.min(parseInt(limitRaw, 10), 5000)) : null;
+
+        const q = User.find().lean();
+        if (limit) q.limit(limit);
+
+        const users = await q;
         return res.status(200).json({ items: users });
     } catch (err) {
         console.error("GET /users failed:", err);
@@ -16,9 +24,13 @@ router.get("/", async (req, res) => {
 
 // 2) CREATE user
 router.post("/", async (req, res) => {
+    const errors = userValidation(req.body, true);
+    if (errors) {
+        return res.status(400).json({ message: "Validation failed", errors });
+    }
+
     try {
-        const userData = req.body;
-        const createdUser = await User.create(userData);
+        const createdUser = await User.create(req.body);
         return res.status(201).json({ item: createdUser });
     } catch (err) {
         console.error("POST /users failed:", err);
@@ -40,8 +52,9 @@ router.post("/import", async (req, res) => {
         for (const line of lines) {
             if (!line.trim()) continue;
 
-            const [name, email, ipAddress, location, active, lastLogin] =
-                line.split(",");
+            const [name, email, ipAddress, location, active, lastLogin] = line.split(",");
+
+            if (!email || !email.trim()) continue;
 
             await User.updateOne(
                 { email: email.trim() },
@@ -68,15 +81,19 @@ router.post("/import", async (req, res) => {
 
 // 4) UPDATE user
 router.patch("/:id", async (req, res) => {
+    const errors = userValidation(req.body, false);
+    if (errors) {
+        return res.status(400).json({ message: "Validation failed", errors });
+    }
+
     try {
         const { id } = req.params;
-        const updateData = req.body;
 
-        const updatedUser = await User.findByIdAndUpdate(
-            id,
-            updateData,
-            { new: true, runValidators: true, lean: true }
-        );
+        const updatedUser = await User.findByIdAndUpdate(id, req.body, {
+            new: true,
+            runValidators: true,
+            lean: true,
+        });
 
         if (!updatedUser) {
             return res.status(404).json({ message: "User not found" });
