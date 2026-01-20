@@ -2,19 +2,35 @@ const router = require("express").Router();
 const User = require("../entity/UserModel");
 const fs = require("fs");
 
-// Joi validation (request-level)
+// request-level validation (Joi)
 const { userValidation } = require("../validation/userValidation");
 
-// 1) LIST users
+/**
+ * ============================================================
+ * USER ROUTES
+ * This file defines all HTTP endpoints related to users.
+ * It acts as the API layer between frontend and database.
+ * ============================================================
+ */
+
+/**
+ * 1) GET /v1/users
+ * Returns a list of users.
+ * Used by the frontend to display the user table.
+ */
 router.get("/", async (req, res) => {
     try {
         const limitRaw = req.query.limit;
-        const limit = limitRaw ? Math.max(1, Math.min(parseInt(limitRaw, 10), 5000)) : null;
+        const limit = limitRaw
+            ? Math.max(1, Math.min(parseInt(limitRaw, 10), 5000))
+            : null;
 
-        const q = User.find().lean();
-        if (limit) q.limit(limit);
+        // Build database query
+        const query = User.find().lean();
+        if (limit) query.limit(limit);
 
-        const users = await q;
+        const users = await query;
+
         return res.status(200).json({ items: users });
     } catch (err) {
         console.error("GET /users failed:", err);
@@ -22,9 +38,13 @@ router.get("/", async (req, res) => {
     }
 });
 
-// 2) CREATE user
+/**
+ * 2) POST /v1/users
+ * Creates a new user.
+ */
 router.post("/", async (req, res) => {
-    const errors = userValidation(req.body, true);
+    // Validate request body before accessing the database
+    const errors = userValidation(req.body, true); // true = create validation
     if (errors) {
         return res.status(400).json({ message: "Validation failed", errors });
     }
@@ -33,29 +53,38 @@ router.post("/", async (req, res) => {
         const createdUser = await User.create(req.body);
         return res.status(201).json({ item: createdUser });
     } catch (err) {
+        // Example errors: duplicate email, schema validation error
         console.error("POST /users failed:", err);
         return res.status(400).json({ message: "User creation failed" });
     }
 });
 
-// 3) IMPORT csv
+/**
+ * 3) POST /v1/users/import
+ * Imports users from a CSV file inside the container.
+ */
 router.post("/import", async (req, res) => {
     try {
+        // CSV file is mounted into the container via docker-compose
         const filePath = "/app/user.csv";
         const fileContent = fs.readFileSync(filePath, "utf8");
 
+        // Split file into lines (handles Windows + Unix line breaks)
         const lines = fileContent.split(/\r?\n/);
-        lines.shift();
+        lines.shift(); // Remove CSV header
 
         let imported = 0;
 
         for (const line of lines) {
             if (!line.trim()) continue;
 
-            const [name, email, ipAddress, location, active, lastLogin] = line.split(",");
+            const [name, email, ipAddress, location, active, lastLogin] =
+                line.split(",");
 
+            // Skip invalid rows
             if (!email || !email.trim()) continue;
 
+            // Upsert = update existing user or create new one
             await User.updateOne(
                 { email: email.trim() },
                 {
@@ -72,16 +101,23 @@ router.post("/import", async (req, res) => {
             imported++;
         }
 
-        return res.status(200).json({ message: "CSV import successful", imported });
+        return res.status(200).json({
+            message: "CSV import successful",
+            imported,
+        });
     } catch (err) {
         console.error("CSV import failed:", err);
         return res.status(500).json({ message: "CSV import failed" });
     }
 });
 
-// 4) UPDATE user
+/**
+ * 4) PATCH /v1/users/:id
+ * Updates an existing user.
+ */
 router.patch("/:id", async (req, res) => {
-    const errors = userValidation(req.body, false);
+    // Validate request body (partial update)
+    const errors = userValidation(req.body, false); // false = patch validation
     if (errors) {
         return res.status(400).json({ message: "Validation failed", errors });
     }
@@ -90,8 +126,8 @@ router.patch("/:id", async (req, res) => {
         const { id } = req.params;
 
         const updatedUser = await User.findByIdAndUpdate(id, req.body, {
-            new: true,
-            runValidators: true,
+            new: true,             // return updated document
+            runValidators: true,   // apply mongoose schema validation
             lean: true,
         });
 
@@ -106,7 +142,10 @@ router.patch("/:id", async (req, res) => {
     }
 });
 
-// 5) BLOCK
+/**
+ * 5) PATCH /v1/users/:id/block
+ * Blocks a user (sets blocked = true).
+ */
 router.patch("/:id/block", async (req, res) => {
     try {
         const { id } = req.params;
@@ -128,7 +167,10 @@ router.patch("/:id/block", async (req, res) => {
     }
 });
 
-// 6) UNBLOCK
+/**
+ * 6) PATCH /v1/users/:id/unblock
+ * Unblocks a user (sets blocked = false).
+ */
 router.patch("/:id/unblock", async (req, res) => {
     try {
         const { id } = req.params;
